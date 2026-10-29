@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live Streaming - Hasil Ujian CBT IPA</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: 'Segoe UI', monospace; 
+            background: #0a0e27; 
+            color: #fff;
+            padding: 20px;
+        }
+        .header {
+            background: linear-gradient(135deg, #1a1a3e, #0d0d2b);
+            padding: 20px;
+            border-radius: 15px;
+            margin-bottom: 20px;
+            border-left: 5px solid #00ff88;
+        }
+        .live-badge {
+            display: inline-block;
+            background: #ff0000;
+            color: white;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.7rem;
+            animation: pulse 1s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        .stat-card {
+            background: rgba(255,255,255,0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 20px;
+            text-align: center;
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+        .stat-number {
+            font-size: 2.5rem;
+            font-weight: bold;
+            font-family: monospace;
+        }
+        .controls {
+            background: rgba(255,255,255,0.05);
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        select, input, button {
+            padding: 10px 15px;
+            border-radius: 8px;
+            border: none;
+            background: #1a1a3e;
+            color: white;
+            cursor: pointer;
+        }
+        button {
+            background: #00ff88;
+            color: #0a0e27;
+            font-weight: bold;
+        }
+        .table-container {
+            background: #1a1a3e;
+            border-radius: 15px;
+            overflow-x: auto;
+            max-height: 60vh;
+            overflow-y: auto;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            padding: 12px;
+            text-align: center;
+            border-bottom: 1px solid #2a2a5e;
+        }
+        th {
+            background: #2a2a5e;
+            position: sticky;
+            top: 0;
+        }
+        .rank-1 { background: #ffd700; color: #0a0e27; }
+        .rank-2 { background: #c0c0c0; color: #0a0e27; }
+        .rank-3 { background: #cd7f32; color: #0a0e27; }
+        .lulus { color: #00ff88; font-weight: bold; }
+        .tidak { color: #ff4444; }
+        .update-time {
+            text-align: right;
+            font-size: 0.8rem;
+            margin-top: 10px;
+            color: #888;
+        }
+        @media (max-width: 768px) {
+            .stats-grid { grid-template-columns: repeat(2, 1fr); }
+        }
+    </style>
+</head>
+<body>
+<div class="header">
+    <h1>📡 LIVE STREAMING DASHBOARD KKG WAHED HASYIM</h1>
+    <p>Monitoring Hasil Tryout Ujian CBT IPA SD Paket A <span class="live-badge">LIVE</span></p>
+</div>
+
+<div class="stats-grid">
+    <div class="stat-card"><div class="stat-number" id="totalSiswa">0</div><div>Total Siswa</div></div>
+    <div class="stat-card"><div class="stat-number" id="sudahUjian">0</div><div>Sudah Ujian</div></div>
+    <div class="stat-card"><div class="stat-number" id="rataRata">0</div><div>Rata-rata</div></div>
+    <div class="stat-card"><div class="stat-number" id="lulusCount">0</div><div>Lulus (≥70)</div></div>
+</div>
+
+<div class="controls">
+    <input type="text" id="searchInput" placeholder="🔍 Cari nama/username..." onkeyup="filterTable()">
+    <select id="lembagaFilter" onchange="filterTable()"></select>
+    <select id="refreshSpeed">
+        <option value="5">⚡ 5 detik (Real-time)</option>
+        <option value="10">🔄 10 detik</option>
+        <option value="30" selected>📊 30 detik</option>
+        <option value="60">🐢 60 detik</option>
+    </select>
+    <button onclick="manualRefresh()">⟳ Refresh Sekarang</button>
+    <button onclick="toggleFullscreen()">🖥️ Fullscreen</button>
+</div>
+
+<div class="table-container">
+    <table id="resultTable">
+        <thead>
+            <tr><th>#</th><th>Nama</th><th>Username</th><th>Lembaga</th><th>Waktu Ujian</th><th>Nilai</th><th>Status</th><th>Detail</th></tr>
+        </thead>
+        <tbody id="tableBody"><tr><td colspan="8" style="text-align:center">⏳ Memuat data...</td></tr></tbody>
+    </table>
+</div>
+<div class="update-time" id="updateTime">Terakhir update: --</div>
+
+<script>
+    // GANTI DENGAN URL DEPLOYMENT APPS SCRIPT ANDA
+    const API_URL = "https://script.google.com/macros/s/AKfycbyoHtLg--xrUMS2SYYZyFJKDCglQ9BAWXwvAMQw5VRARXAwy78ie4KrBpY3ZCRyKCTLmA/exec";
+    
+    let allData = [];
+    let refreshTimer = null;
+    let currentRanking = [];
+
+    async function fetchData() {
+        try {
+            const url = `${API_URL}?action=getStudents&t=${Date.now()}`;
+            const response = await fetch(url);
+            const result = await response.json();
+            
+            if (result.success && result.students) {
+                processData(result.students);
+                document.getElementById('updateTime').innerHTML = `🕐 Terakhir update: ${new Date().toLocaleTimeString()}`;
+            }
+        } catch (error) {
+            console.error("Error fetching:", error);
+        }
+    }
+
+    function processData(students) {
+        let results = [];
+        let totalNilai = 0;
+        let examCount = 0;
+        let lulus = 0;
+        let lembagaSet = new Set();
+
+        for (let [username, data] of Object.entries(students)) {
+            let lembaga = data.lembaga || 'Default';
+            lembagaSet.add(lembaga);
+            
+            let examDate = '-';
+            let score = '-';
+            let status = 'Belum';
+            
+            if (data.exams && data.exams.length > 0) {
+                let last = data.exams[data.exams.length - 1];
+                score = last.score;
+                totalNilai += score;
+                examCount++;
+                examDate = new Date(last.date).toLocaleString('id-ID');
+                status = score >= 70 ? 'Lulus' : 'Tidak Lulus';
+                if (score >= 70) lulus++;
+            }
+            
+            results.push({
+                username, name: data.name || username, lembaga, examDate, 
+                score: score, status, rawScore: score !== '-' ? score : 0
+            });
+        }
+        
+        // Ranking
+        results.sort((a,b) => {
+            if (a.score === '-') return 1;
+            if (b.score === '-') return -1;
+            return b.score - a.score;
+        });
+        
+        allData = results;
+        currentRanking = results;
+        
+        // Update statistik
+        document.getElementById('totalSiswa').innerText = results.length;
+        document.getElementById('sudahUjian').innerText = examCount;
+        document.getElementById('rataRata').innerText = examCount ? Math.round(totalNilai/examCount) : 0;
+        document.getElementById('lulusCount').innerText = lulus;
+        
+        // Update filter lembaga
+        let filterSelect = document.getElementById('lembagaFilter');
+        let currentVal = filterSelect.value;
+        filterSelect.innerHTML = '<option value="ALL">📌 Semua Lembaga</option>';
+        [...lembagaSet].sort().forEach(l => {
+            filterSelect.innerHTML += `<option value="${l}">🏫 ${l}</option>`;
+        });
+        if (currentVal && lembagaSet.has(currentVal)) filterSelect.value = currentVal;
+        
+        renderTable();
+    }
+
+    function renderTable() {
+        let search = document.getElementById('searchInput').value.toLowerCase();
+        let lembaga = document.getElementById('lembagaFilter').value;
+        
+        let filtered = allData.filter(d => {
+            let matchSearch = d.name.toLowerCase().includes(search) || d.username.toLowerCase().includes(search);
+            let matchLembaga = lembaga === 'ALL' || d.lembaga === lembaga;
+            return matchSearch && matchLembaga;
+        });
+        
+        let tbody = document.getElementById('tableBody');
+        if (filtered.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="8">📭 Tidak ada data</td></tr>';
+            return;
+        }
+        
+        let html = '';
+        filtered.forEach((d, idx) => {
+            let rank = idx + 1;
+            let rankClass = '';
+            if (rank === 1) rankClass = 'rank-1';
+            else if (rank === 2) rankClass = 'rank-2';
+            else if (rank === 3) rankClass = 'rank-3';
+            
+            let scoreDisplay = d.score === '-' ? '-' : 
+                `<span class="${d.status === 'Lulus' ? 'lulus' : 'tidak'}">${d.score}</span>`;
+            let statusDisplay = d.status === 'Lulus' ? '✅ Lulus' : (d.status === 'Tidak Lulus' ? '❌ Tidak' : '⏳ Belum');
+            
+            html += `<tr class="${rankClass}">
+                <td><strong>${rank}</strong></td>
+                <td style="text-align:left">${escapeHtml(d.name)}</td>
+                <td>${escapeHtml(d.username)}</td>
+                <td>${escapeHtml(d.lembaga)}</td>
+                <td>${d.examDate}</td>
+                <td>${scoreDisplay}</td>
+                <td>${statusDisplay}</td>
+                <td><button onclick="showDetail('${d.username}')" style="background:#00ff88;color:#000;padding:4px 8px">📋</button></td>
+            </tr>`;
+        });
+        tbody.innerHTML = html;
+    }
+    
+    function escapeHtml(str) { return (str || '').replace(/[&<>]/g, function(m){return m==='&'?'&amp;':m==='<'?'&lt;':'&gt;';}); }
+    
+    async function showDetail(username) {
+        let res = await fetch(`${API_URL}?action=getStudents&t=${Date.now()}`);
+        let data = await res.json();
+        let student = data.students[username];
+        if (student && student.exams && student.exams.length) {
+            let last = student.exams[student.exams.length - 1];
+            alert(`📋 Detail ${student.name}\nNilai: ${last.score}\nBenar: ${last.correctCount}/30\nTanggal: ${new Date(last.date).toLocaleString()}`);
+        } else {
+            alert(`📋 ${student?.name || username}\nBelum mengikuti ujian`);
+        }
+    }
+    
+    function filterTable() { renderTable(); }
+    function manualRefresh() { fetchData(); }
+    
+    function startAutoRefresh() {
+        if (refreshTimer) clearInterval(refreshTimer);
+        let speed = parseInt(document.getElementById('refreshSpeed').value) || 30;
+        refreshTimer = setInterval(() => fetchData(), speed * 1000);
+    }
+    
+    function toggleFullscreen() {
+        if (!document.fullscreenElement) document.documentElement.requestFullscreen();
+        else document.exitFullscreen();
+    }
+    
+    document.getElementById('refreshSpeed').addEventListener('change', startAutoRefresh);
+    
+    fetchData();
+    startAutoRefresh();
+</script>
+</body>
+</html>
